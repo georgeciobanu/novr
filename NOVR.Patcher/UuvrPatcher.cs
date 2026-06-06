@@ -12,6 +12,10 @@ using Mono.Cecil.Cil;
 
 public class Patcher
 {
+    private const string PluginConfigFileName = "deltawing.novr.cfg";
+    private const string OpenXrConfigSection = "OpenXR";
+    private const string ExperimentalSinglePassConfigKey = "Experimental Single Pass Instanced";
+
     private static readonly List<string> GlobalSettingsFileNames =
         new()
         {
@@ -51,22 +55,28 @@ public class Patcher
             return;
         }
 
+        var renderModeName = GetConfiguredOpenXrRenderModeName();
+
         var applySettingsMethod = openXrSettingsType.Methods.FirstOrDefault(method => method.Name == "ApplySettings");
         if (applySettingsMethod != null)
         {
-            ForceMultiPass(applySettingsMethod, renderModeField, openXrSettingsType);
+            ForceRenderMode(applySettingsMethod, renderModeField, openXrSettingsType, renderModeName);
         }
 
         var awakeMethod = openXrSettingsType.Methods.FirstOrDefault(method => method.Name == "Awake");
         if (awakeMethod != null)
         {
-            ForceMultiPass(awakeMethod, renderModeField, openXrSettingsType);
+            ForceRenderMode(awakeMethod, renderModeField, openXrSettingsType, renderModeName);
         }
 
-        Console.WriteLine("[NOVR.Patcher] Patched OpenXRSettings to force MultiPass.");
+        Console.WriteLine($"[NOVR.Patcher] Patched OpenXRSettings to force {renderModeName}.");
     }
 
-    private static void ForceMultiPass(MethodDefinition method, FieldDefinition renderModeField, TypeDefinition openXrSettingsType)
+    private static void ForceRenderMode(
+        MethodDefinition method,
+        FieldDefinition renderModeField,
+        TypeDefinition openXrSettingsType,
+        string renderModeName)
     {
         if (!method.HasBody)
         {
@@ -74,17 +84,145 @@ public class Patcher
             return;
         }
 
-        var singlePassValue = openXrSettingsType.NestedTypes
+        var renderModeValue = openXrSettingsType.NestedTypes
             .First(type => type.Name == "RenderMode")
             .Fields
-            .First(field => field.Name == "MultiPass");
+            .First(field => field.Name == renderModeName);
 
         var il = method.Body.GetILProcessor();
         var firstInstruction = method.Body.Instructions.First();
 
         il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldarg_0));
-        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldc_I4, singlePassValue.Constant is int value ? value : 1));
+        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldc_I4, renderModeValue.Constant is int value ? value : 0));
         il.InsertBefore(firstInstruction, il.Create(OpCodes.Stfld, renderModeField));
+    }
+
+    private static string GetConfiguredOpenXrRenderModeName()
+    {
+        return IsExperimentalSinglePassInstancedEnabled()
+            ? "SinglePassInstanced"
+            : "MultiPass";
+    }
+
+    private static bool IsExperimentalSinglePassInstancedEnabled()
+    {
+        var envValue = Environment.GetEnvironmentVariable("NOVR_EXPERIMENTAL_SINGLE_PASS_INSTANCED");
+        if (TryParseBoolean(envValue, out var envEnabled))
+        {
+            return envEnabled;
+        }
+
+        var configPath = GetPluginConfigPath();
+        if (configPath == null || !File.Exists(configPath))
+        {
+            return false;
+        }
+
+        if (TryReadBepInExConfigValue(configPath, OpenXrConfigSection, ExperimentalSinglePassConfigKey, out var value) &&
+            TryParseBoolean(value, out var enabled))
+        {
+            return enabled;
+        }
+
+        if (TryReadBepInExConfigValue(configPath, OpenXrConfigSection, "Render Mode", out var oldRenderModeValue))
+        {
+            return string.Equals(oldRenderModeValue, "SinglePassInstanced", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(oldRenderModeValue, "Single Pass Instanced", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static string? GetPluginConfigPath()
+    {
+        try
+        {
+            var gameExePath = Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrWhiteSpace(gameExePath))
+            {
+                return null;
+            }
+
+            var gamePath = Path.GetDirectoryName(gameExePath);
+            return gamePath == null
+                ? null
+                : Path.Combine(gamePath, "BepInEx", "config", PluginConfigFileName);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool TryReadBepInExConfigValue(string configPath, string section, string key, out string value)
+    {
+        value = string.Empty;
+        var inRequestedSection = false;
+
+        foreach (var rawLine in File.ReadAllLines(configPath))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0 || line.StartsWith("#") || line.StartsWith(";"))
+            {
+                continue;
+            }
+
+            if (line.StartsWith("[") && line.EndsWith("]"))
+            {
+                var sectionName = line.Substring(1, line.Length - 2).Trim();
+                inRequestedSection = string.Equals(sectionName, section, StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (!inRequestedSection)
+            {
+                continue;
+            }
+
+            var separatorIndex = line.IndexOf('=');
+            if (separatorIndex < 0)
+            {
+                continue;
+            }
+
+            var currentKey = line.Substring(0, separatorIndex).Trim();
+            if (!string.Equals(currentKey, key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            value = line.Substring(separatorIndex + 1).Trim();
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseBoolean(string? value, out bool result)
+    {
+        result = false;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        switch (value.Trim().ToLowerInvariant())
+        {
+            case "true":
+            case "1":
+            case "yes":
+            case "on":
+                result = true;
+                return true;
+            case "false":
+            case "0":
+            case "no":
+            case "off":
+                result = false;
+                return true;
+            default:
+                return false;
+        }
     }
 #endif
 

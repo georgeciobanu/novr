@@ -81,6 +81,7 @@ public class UIBehaviorPatcher : NOVRBehaviour
     {
         var toAddComp = _patchMap[comp.GetType()];
         _toPatch_component[comp] = toAddComp;
+        NOVRDiagnosticsCounters.ComponentPatchQueued++;
     }
 
 
@@ -97,6 +98,7 @@ public class UIBehaviorPatcher : NOVRBehaviour
             {
                 Debug.Log($"UIBehaviorPatcher: Reactivating {go.name}");
                 go.SetActive(true);
+                NOVRDiagnosticsCounters.UiSetActiveReactivations++;
             }
             
             _toReactivate.Clear();
@@ -129,7 +131,11 @@ public class UIBehaviorPatcher : NOVRBehaviour
                 if (_toPatch_name.TryGetValue(name, out var toAdd))
                 {
                     Debug.Log($"UIBehaviorPatcher: Adding {toAdd.Name} to {name} (name patch)");
-                    if (!go.TryGetComponent(toAdd, out Component _)) AddAndBounceIfActive(go, toAdd);
+                    if (!go.TryGetComponent(toAdd, out Component _))
+                    {
+                        NOVRDiagnosticsCounters.NamePatchQueued++;
+                        AddAndBounceIfActive(go, toAdd);
+                    }
                 }
             }
             _toPatch_name.Clear();
@@ -140,11 +146,19 @@ public class UIBehaviorPatcher : NOVRBehaviour
     {
         var wasActive = go.activeInHierarchy;
         go.AddComponent(toAdd);
+        NOVRDiagnosticsCounters.UiComponentsAdded++;
 
         if (!wasActive) return;
-        
+
+        if (ModConfiguration.Instance?.UiSetActiveBounceEnabled.Value != true)
+        {
+            NOVRDiagnosticsCounters.UiSetActiveBouncesSkipped++;
+            return;
+        }
+
         Debug.Log($"UIBehaviorPatcher: Deactivating {go.name} for one frame to force lifecycle callbacks");
         go.SetActive(false);
+        NOVRDiagnosticsCounters.UiSetActiveBouncesPerformed++;
         _toReactivate.Add(go);
     }
 }

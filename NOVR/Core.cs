@@ -33,6 +33,8 @@ public class Core : MonoBehaviour
         DontDestroyOnLoad(gameObject);
         gameObject.AddComponent<VrCameraManager>();
         gameObject.AddComponent<APIBus>();
+        gameObject.AddComponent<RenderScaleManager>();
+        gameObject.AddComponent<NOVRDiagnostics>();
     }
 
     private void OnDestroy()

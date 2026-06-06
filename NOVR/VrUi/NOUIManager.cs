@@ -55,7 +55,11 @@ public class NOUIManager : NOVRBehaviour
 
     private void Update()
     {
-        ConfigureUiCameras();
+        if (ModConfiguration.Instance?.UiConfigureCameraEveryFrame.Value == true)
+        {
+            ConfigureUiCameras();
+        }
+
         UpdateSmoothedPosition();
     }
     
@@ -94,7 +98,39 @@ public class NOUIManager : NOVRBehaviour
 
     private void OnMainCameraChanged(Camera? previous, Camera? newCam)
     {
-        newCam?.gameObject?.GetComponent<UniversalAdditionalCameraData>()?.cameraStack?.Add(_cockpitHudCamera);
+        var additionalCameraData = newCam?.gameObject?.GetComponent<UniversalAdditionalCameraData>();
+        var cameraStack = additionalCameraData?.cameraStack;
+        if (cameraStack == null)
+        {
+            NOVRDiagnosticsCounters.UiCameraStackMissing++;
+            return;
+        }
+
+        var uiCamera = CockpitHudCamera;
+        if (ModConfiguration.Instance?.UiCameraStackDedupEnabled.Value != true)
+        {
+            cameraStack.Add(uiCamera);
+            NOVRDiagnosticsCounters.UiCameraStackAdds++;
+            NOVRDiagnosticsCounters.LastUiCameraStackSize = cameraStack.Count;
+            return;
+        }
+
+        var duplicatesRemoved = 0;
+        for (var index = cameraStack.Count - 1; index >= 0; index--)
+        {
+            if (cameraStack[index] != uiCamera) continue;
+            cameraStack.RemoveAt(index);
+            duplicatesRemoved++;
+        }
+
+        if (duplicatesRemoved > 1)
+        {
+            NOVRDiagnosticsCounters.UiCameraStackDuplicateEntriesRemoved += duplicatesRemoved - 1;
+        }
+
+        cameraStack.Add(uiCamera);
+        NOVRDiagnosticsCounters.UiCameraStackAdds++;
+        NOVRDiagnosticsCounters.LastUiCameraStackSize = cameraStack.Count;
     }
 
     private void ConfigureUiCameras()
