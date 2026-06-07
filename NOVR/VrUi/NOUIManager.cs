@@ -45,6 +45,7 @@ public class NOUIManager : NOVRBehaviour
         UIBehaviorPatcher.DoPatching();
         Create<VrUiCursor>(transform);
         ConfigureUiCameras();
+        OnMainCameraChanged(null, APIBus.MainCamera);
     }
 
     protected override void OnSettingChanged()
@@ -55,7 +56,6 @@ public class NOUIManager : NOVRBehaviour
 
     private void Update()
     {
-        ConfigureUiCameras();
         UpdateSmoothedPosition();
     }
     
