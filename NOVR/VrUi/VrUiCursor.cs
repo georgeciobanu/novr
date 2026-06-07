@@ -16,8 +16,9 @@ public class VrUiCursor: NOVRBehaviour
     private const float MaxPitchDegrees = 45f;
     private const float DefaultProjectionDistance = 5;
     private const int CursorTextureSize = 64;
-    private const float CursorRingRadius = 12f;
-    private const float CursorRingThickness = 4f;
+    private const float CursorRingRadius = 16f;
+    private const float CursorRingThickness = 5f;
+    private const float CursorOutlineThickness = 2f;
     private static readonly Vector2 CursorRectSize = new(CursorTextureSize, CursorTextureSize);
     private GameObject? _cursor;
     private RectTransform? _cursorRectTransform;
@@ -208,7 +209,10 @@ public class VrUiCursor: NOVRBehaviour
         var center = new Vector2((CursorTextureSize - 1) * 0.5f, (CursorTextureSize - 1) * 0.5f);
         var innerRadius = CursorRingRadius - CursorRingThickness * 0.5f;
         var outerRadius = CursorRingRadius + CursorRingThickness * 0.5f;
-        var green = new Color32(100, 200, 100, 255);
+        var outlineInnerRadius = innerRadius - CursorOutlineThickness;
+        var outlineOuterRadius = outerRadius + CursorOutlineThickness;
+        var green = new Color32(80, 240, 120, 255);
+        var black = new Color32(0, 0, 0, 255);
         var transparent = new Color32(0, 0, 0, 0);
 
         for (var y = 0; y < CursorTextureSize; y++)
@@ -217,7 +221,8 @@ public class VrUiCursor: NOVRBehaviour
             {
                 var distanceFromCenter = Vector2.Distance(new Vector2(x, y), center);
                 var isRing = distanceFromCenter >= innerRadius && distanceFromCenter <= outerRadius;
-                colors[y * CursorTextureSize + x] = isRing ? green : transparent;
+                var isOutline = distanceFromCenter >= outlineInnerRadius && distanceFromCenter <= outlineOuterRadius;
+                colors[y * CursorTextureSize + x] = isRing ? green : isOutline ? black : transparent;
             }
         }
 
