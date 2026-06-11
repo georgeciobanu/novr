@@ -135,3 +135,21 @@ In Unity terms, generating stereo shader variants means building shaders with
 Single Pass Instanced support so the compiled shader variants include stereo
 instancing. Runtime DLLs can set OpenXR render mode and provide XR behaviours,
 but they cannot regenerate baked shader variants from the shipped game build.
+
+## References
+
+- LCVR SPI patch:
+  https://github.com/DaXcess/LCVR/commit/476598c05ac2cdd12807803f86d1795b0e6545e8
+
+  Useful takeaways:
+
+  - LCVR also changed OpenXR from `MultiPass` to `SinglePassInstanced` and kept
+    `depthSubmissionMode = None`.
+  - Their changelog warns SPI may break some mods and calls out shader problems,
+    including a posterization shader where the left and right eye do not match.
+  - They cache and restore OpenXR features because the vanilla game can overwrite
+    them before XR startup. If NOVR logs show features or render mode changing
+    after we set them, this is the next pattern to copy.
+  - Their `settings.xrSettings.singlePass = true` change is HDRP-specific. For
+    Nuclear Option/URP, the comparable checks are OpenXR `renderMode`, camera
+    `stereoTargetEye`, `targetTexture`, and URP `allowXRRendering`.
