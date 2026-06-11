@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using NOVR.Diagnostics;
 using UnityEngine;
 
 namespace NOVR.VrCamera;
@@ -35,6 +36,12 @@ public class AdditionalCameraData: MonoBehaviour
             _renderTypeProperty = _additionalCameraDataType?.GetProperty("renderType");
             _cameraStackProperty = _additionalCameraDataType?.GetProperty("cameraStack");
             _allowXrRenderingProperty = _additionalCameraDataType?.GetProperty("allowXRRendering");
+
+            RenderDiagnostics.InfoOnce(
+                "urp-additional-camera-data-type",
+                _additionalCameraDataType == null
+                    ? "URP UniversalAdditionalCameraData type was not found."
+                    : $"URP UniversalAdditionalCameraData type found. renderType={_renderTypeProperty != null} cameraStack={_cameraStackProperty != null} allowXRRendering={_allowXrRenderingProperty != null}");
         }
 
         if (_additionalCameraDataType == null) return null;
@@ -45,16 +52,19 @@ public class AdditionalCameraData: MonoBehaviour
     private void Awake()
     {
         _additionalCameraData = gameObject.GetComponent(_additionalCameraDataType) ?? gameObject.AddComponent(_additionalCameraDataType);
+        RenderDiagnostics.Info($"AdditionalCameraData attached to {gameObject.name}: {RenderDiagnostics.DescribeUniversalAdditionalCameraData(gameObject)}");
     }
 
     public void SetRenderTypeBase()
     {
         _renderTypeProperty?.SetValue(_additionalCameraData, RenderTypeBase);
+        RenderDiagnostics.Info($"Set URP renderType=Base on {gameObject.name}: {RenderDiagnostics.DescribeUniversalAdditionalCameraData(gameObject)}");
     }
 
     public void SetRenderTypeOverlay()
     {
         _renderTypeProperty?.SetValue(_additionalCameraData, RenderTypeOverlay);
+        RenderDiagnostics.Info($"Set URP renderType=Overlay on {gameObject.name}: {RenderDiagnostics.DescribeUniversalAdditionalCameraData(gameObject)}");
     }
 
     public bool IsOverlay()
@@ -69,7 +79,8 @@ public class AdditionalCameraData: MonoBehaviour
 
     public void SetAllowXrRendering(bool allowXrRendering)
     {
-        _allowXrRenderingProperty.SetValue(_additionalCameraData, allowXrRendering);    
+        _allowXrRenderingProperty.SetValue(_additionalCameraData, allowXrRendering);
+        RenderDiagnostics.Info($"Set URP allowXRRendering={allowXrRendering} on {gameObject.name}: {RenderDiagnostics.DescribeUniversalAdditionalCameraData(gameObject)}");
     }
 }
 #endif

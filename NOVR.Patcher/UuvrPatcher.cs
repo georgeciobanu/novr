@@ -12,6 +12,13 @@ using Mono.Cecil.Cil;
 
 public class Patcher
 {
+    private const string PluginConfigFileName = "deltawing.novr.cfg";
+    private const string OpenXrConfigSection = "OpenXR";
+    private const string OpenXrRenderModeConfigKey = "Render Mode";
+    private const string OpenXrRenderModeEnvironmentVariable = "NOVR_OPENXR_RENDER_MODE";
+    private const string LegacySinglePassEnvironmentVariable = "NOVR_EXPERIMENTAL_SINGLE_PASS_INSTANCED";
+    private const string LegacySinglePassConfigKey = "Experimental Single Pass Instanced";
+
     private static readonly List<string> GlobalSettingsFileNames =
         new()
         {
@@ -37,6 +44,7 @@ public class Patcher
 #if MONO
     private static void PatchOpenXrSettings(AssemblyDefinition assembly)
     {
+        Console.WriteLine("[NOVR.Patcher] Inspecting Unity.XR.OpenXR settings for render-mode patching.");
         var openXrSettingsType = assembly.MainModule.GetType("UnityEngine.XR.OpenXR.OpenXRSettings");
         if (openXrSettingsType == null)
         {
@@ -51,22 +59,33 @@ public class Patcher
             return;
         }
 
+        var renderModeName = GetConfiguredOpenXrRenderModeName();
+        if (renderModeName == null)
+        {
+            Console.WriteLine("[NOVR.Patcher] Leaving OpenXRSettings render mode unpatched.");
+            return;
+        }
+
         var applySettingsMethod = openXrSettingsType.Methods.FirstOrDefault(method => method.Name == "ApplySettings");
         if (applySettingsMethod != null)
         {
-            ForceMultiPass(applySettingsMethod, renderModeField, openXrSettingsType);
+            ForceRenderMode(applySettingsMethod, renderModeField, openXrSettingsType, renderModeName);
         }
 
         var awakeMethod = openXrSettingsType.Methods.FirstOrDefault(method => method.Name == "Awake");
         if (awakeMethod != null)
         {
-            ForceMultiPass(awakeMethod, renderModeField, openXrSettingsType);
+            ForceRenderMode(awakeMethod, renderModeField, openXrSettingsType, renderModeName);
         }
 
-        Console.WriteLine("[NOVR.Patcher] Patched OpenXRSettings to force MultiPass.");
+        Console.WriteLine($"[NOVR.Patcher] Patched OpenXRSettings to force {renderModeName}.");
     }
 
-    private static void ForceMultiPass(MethodDefinition method, FieldDefinition renderModeField, TypeDefinition openXrSettingsType)
+    private static void ForceRenderMode(
+        MethodDefinition method,
+        FieldDefinition renderModeField,
+        TypeDefinition openXrSettingsType,
+        string renderModeName)
     {
         if (!method.HasBody)
         {
@@ -74,17 +93,204 @@ public class Patcher
             return;
         }
 
-        var singlePassValue = openXrSettingsType.NestedTypes
+        var renderModeValue = openXrSettingsType.NestedTypes
             .First(type => type.Name == "RenderMode")
             .Fields
-            .First(field => field.Name == "MultiPass");
+            .First(field => field.Name == renderModeName);
 
         var il = method.Body.GetILProcessor();
         var firstInstruction = method.Body.Instructions.First();
 
         il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldarg_0));
-        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldc_I4, singlePassValue.Constant is int value ? value : 1));
+        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldc_I4, renderModeValue.Constant is int value ? value : 1));
         il.InsertBefore(firstInstruction, il.Create(OpCodes.Stfld, renderModeField));
+        Console.WriteLine($"[NOVR.Patcher] Injected {method.Name} render-mode assignment: {renderModeName}={renderModeValue.Constant}.");
+    }
+
+    private static string? GetConfiguredOpenXrRenderModeName()
+    {
+        if (TryReadConfiguredRenderMode(out var renderModeName))
+        {
+            Console.WriteLine($"[NOVR.Patcher] Configured OpenXR render mode: {renderModeName ?? "Default/unpatched"}.");
+            return renderModeName;
+        }
+
+        Console.WriteLine("[NOVR.Patcher] No OpenXR render mode override found; defaulting to SinglePassInstanced.");
+        return "SinglePassInstanced";
+    }
+
+    private static bool TryReadConfiguredRenderMode(out string? renderModeName)
+    {
+        renderModeName = null;
+
+        var renderModeEnvironmentValue = Environment.GetEnvironmentVariable(OpenXrRenderModeEnvironmentVariable);
+        if (TryParseRenderMode(renderModeEnvironmentValue, out renderModeName))
+        {
+            Console.WriteLine($"[NOVR.Patcher] Using {OpenXrRenderModeEnvironmentVariable}={renderModeEnvironmentValue}.");
+            return true;
+        }
+
+        var legacyEnvironmentValue = Environment.GetEnvironmentVariable(LegacySinglePassEnvironmentVariable);
+        if (TryParseBoolean(legacyEnvironmentValue, out var legacyEnvEnabled))
+        {
+            renderModeName = legacyEnvEnabled ? "SinglePassInstanced" : "MultiPass";
+            Console.WriteLine($"[NOVR.Patcher] Using legacy {LegacySinglePassEnvironmentVariable}={legacyEnvironmentValue}; mappedRenderMode={renderModeName}.");
+            return true;
+        }
+
+        var configPath = GetPluginConfigPath();
+        Console.WriteLine($"[NOVR.Patcher] Looking for plugin config at: {configPath ?? "<unknown>"}.");
+        if (configPath == null || !File.Exists(configPath))
+        {
+            Console.WriteLine("[NOVR.Patcher] Plugin config not found yet.");
+            return false;
+        }
+
+        if (TryReadBepInExConfigValue(configPath, OpenXrConfigSection, OpenXrRenderModeConfigKey, out var configValue) &&
+            TryParseRenderMode(configValue, out renderModeName))
+        {
+            Console.WriteLine($"[NOVR.Patcher] Using config [{OpenXrConfigSection}] {OpenXrRenderModeConfigKey}={configValue}.");
+            return true;
+        }
+
+        if (TryReadBepInExConfigValue(configPath, OpenXrConfigSection, LegacySinglePassConfigKey, out var legacyConfigValue) &&
+            TryParseBoolean(legacyConfigValue, out var legacyConfigEnabled))
+        {
+            renderModeName = legacyConfigEnabled ? "SinglePassInstanced" : "MultiPass";
+            Console.WriteLine($"[NOVR.Patcher] Using legacy config [{OpenXrConfigSection}] {LegacySinglePassConfigKey}={legacyConfigValue}; mappedRenderMode={renderModeName}.");
+            return true;
+        }
+
+        Console.WriteLine("[NOVR.Patcher] No render mode value found in plugin config.");
+        return false;
+    }
+
+    private static bool TryParseRenderMode(string? value, out string? renderModeName)
+    {
+        renderModeName = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value!
+            .Trim()
+            .Replace(" ", string.Empty)
+            .Replace("-", string.Empty)
+            .Replace("_", string.Empty)
+            .ToLowerInvariant();
+
+        switch (normalized)
+        {
+            case "default":
+            case "unitydefault":
+                renderModeName = null;
+                return true;
+            case "multipass":
+            case "multi":
+                renderModeName = "MultiPass";
+                return true;
+            case "singlepassinstanced":
+            case "singlepass":
+            case "spi":
+                renderModeName = "SinglePassInstanced";
+                return true;
+            default:
+                Console.WriteLine($"[NOVR.Patcher] Ignoring invalid OpenXR render mode '{value}'.");
+                return false;
+        }
+    }
+
+    private static string? GetPluginConfigPath()
+    {
+        try
+        {
+            var gameExePath = Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrWhiteSpace(gameExePath))
+            {
+                return null;
+            }
+
+            var gamePath = Path.GetDirectoryName(gameExePath);
+            return gamePath == null
+                ? null
+                : Path.Combine(gamePath, "BepInEx", "config", PluginConfigFileName);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool TryReadBepInExConfigValue(string configPath, string section, string key, out string value)
+    {
+        value = string.Empty;
+        var inRequestedSection = false;
+
+        foreach (var rawLine in File.ReadAllLines(configPath))
+        {
+            var line = rawLine.Trim();
+            if (line.Length == 0 || line.StartsWith("#") || line.StartsWith(";"))
+            {
+                continue;
+            }
+
+            if (line.StartsWith("[") && line.EndsWith("]"))
+            {
+                var sectionName = line.Substring(1, line.Length - 2).Trim();
+                inRequestedSection = string.Equals(sectionName, section, StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (!inRequestedSection)
+            {
+                continue;
+            }
+
+            var separatorIndex = line.IndexOf('=');
+            if (separatorIndex < 0)
+            {
+                continue;
+            }
+
+            var currentKey = line.Substring(0, separatorIndex).Trim();
+            if (!string.Equals(currentKey, key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            value = line.Substring(separatorIndex + 1).Trim();
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseBoolean(string? value, out bool result)
+    {
+        result = false;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        switch (value!.Trim().ToLowerInvariant())
+        {
+            case "true":
+            case "1":
+            case "yes":
+            case "on":
+                result = true;
+                return true;
+            case "false":
+            case "0":
+            case "no":
+            case "off":
+                result = false;
+                return true;
+            default:
+                return false;
+        }
     }
 #endif
 

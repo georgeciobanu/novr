@@ -3,6 +3,7 @@ using System;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 #endif
 using System.Collections.Generic;
+using NOVR.Diagnostics;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
 
@@ -27,6 +28,7 @@ public class VrCameraManager: MonoBehaviour
             var gameObject = camera.gameObject;
             if (gameObject.name is not (NuclearOptionMainCameraName or NuclearOptionMenuCameraName) || IgnoredCameras.Contains(camera)) continue;
 
+            RenderDiagnostics.Info($"Camera candidate found: {RenderDiagnostics.DescribeCamera(camera)}; {RenderDiagnostics.DescribeUniversalAdditionalCameraData(gameObject)}");
             if (gameObject.name == NuclearOptionMainCameraName)
             {
                 SetUpMainCameraRig(camera);
@@ -48,11 +50,13 @@ public class VrCameraManager: MonoBehaviour
 
     private void SetUpMainCameraRig(Camera rootCamera)
     {
+        RenderDiagnostics.Info($"Setting up main camera rig from root: {RenderDiagnostics.DescribeCamera(rootCamera)}; {RenderDiagnostics.DescribeUniversalAdditionalCameraData(rootCamera.gameObject)}");
         HandleChildCameras(rootCamera);
 
         var existingTrackedCamera = GetTrackedMainCamera(rootCamera.gameObject);
         if (existingTrackedCamera != null)
         {
+            RenderDiagnostics.Info($"Tracked main camera already exists: {RenderDiagnostics.DescribeCamera(existingTrackedCamera)}");
             IgnoredCameras.Add(rootCamera);
             IgnoredCameras.Add(existingTrackedCamera);
             return;
@@ -64,6 +68,8 @@ public class VrCameraManager: MonoBehaviour
 
         var trackedCamera = trackedCameraObject.AddComponent<Camera>();
         trackedCamera.CopyFrom(rootCamera);
+        trackedCamera.stereoTargetEye = StereoTargetEyeMask.Both;
+        trackedCamera.targetTexture = null;
         var additionalCameraData = AdditionalCameraData.Create(trackedCamera);
         additionalCameraData?.SetRenderTypeBase();
         additionalCameraData?.SetAllowXrRendering(true);
@@ -73,7 +79,14 @@ public class VrCameraManager: MonoBehaviour
         var rootUniversalAdditionalCameraData = rootCamera.GetComponent<UniversalAdditionalCameraData>();
         
         if (universalAdditionalCameraData != null && rootUniversalAdditionalCameraData != null)
+        {
             universalAdditionalCameraData.cameraStack.AddRange(rootUniversalAdditionalCameraData.cameraStack);
+            RenderDiagnostics.Info($"Copied URP camera stack from root to tracked camera. rootStack={rootUniversalAdditionalCameraData.cameraStack.Count} trackedStack={universalAdditionalCameraData.cameraStack.Count}");
+        }
+        else
+        {
+            RenderDiagnostics.Warning($"Could not copy URP camera stack. trackedData={universalAdditionalCameraData != null} rootData={rootUniversalAdditionalCameraData != null}");
+        }
         
         
         var rootAudioListener = rootCamera.GetComponent<AudioListener>();
@@ -92,14 +105,18 @@ public class VrCameraManager: MonoBehaviour
 
         IgnoredCameras.Add(rootCamera);
         IgnoredCameras.Add(trackedCamera);
+        RenderDiagnostics.Info($"Main camera rig ready. rootIgnored={RenderDiagnostics.DescribeCamera(rootCamera)} tracked={RenderDiagnostics.DescribeCamera(trackedCamera)}; {RenderDiagnostics.DescribeUniversalAdditionalCameraData(trackedCameraObject)}");
     }
 
     private void HandleChildCameras(Camera parentCamera)
     {
         foreach (var child in parentCamera.GetComponentsInChildren<Camera>())
         {
-            if (child != parentCamera && !IgnoredCameras.Contains(child)) 
+            if (child != parentCamera && !IgnoredCameras.Contains(child))
+            {
+                RenderDiagnostics.Info($"Adding StereoCamera behaviour to child camera under {parentCamera.name}: {RenderDiagnostics.DescribeCamera(child)}");
                 child.gameObject.AddComponent<StereoCamera>();
+            }
         }
     }
 

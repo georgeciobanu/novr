@@ -1,4 +1,5 @@
 using System;
+using NOVR.Diagnostics;
 using NOVR.VrCamera;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
@@ -71,6 +72,7 @@ public class NOUIManager : NOVRBehaviour
 
     private Camera CreateUiCamera(string cameraName, float depth)
     {
+        RenderDiagnostics.Info($"Creating NOVR UI camera: name={cameraName} depth={depth}");
         var poseDriver = Create<NOVRPoseDriver>(transform);
         poseDriver.name = cameraName;
 
@@ -88,13 +90,20 @@ public class NOUIManager : NOVRBehaviour
         camera.allowMSAA = false;
         camera.cullingMask = 1 << LayerHelper.GetVrUiLayer();
         additionalCameraData.renderType = CameraRenderType.Overlay;
+        additionalCameraData.allowXRRendering = true;
 
+        RenderDiagnostics.Info($"Created NOVR UI camera: {RenderDiagnostics.DescribeCamera(camera)}; {RenderDiagnostics.DescribeUniversalAdditionalCameraData(camera.gameObject)}");
         return camera;
     }
 
     private void OnMainCameraChanged(Camera? previous, Camera? newCam)
     {
+        RenderDiagnostics.Info($"Main camera changed for UI stack. previous={RenderDiagnostics.DescribeCamera(previous)} new={RenderDiagnostics.DescribeCamera(newCam)} cockpitHud={RenderDiagnostics.DescribeCamera(_cockpitHudCamera)}");
         newCam?.gameObject?.GetComponent<UniversalAdditionalCameraData>()?.cameraStack?.Add(_cockpitHudCamera);
+        if (newCam != null)
+        {
+            RenderDiagnostics.Info($"Main camera URP data after UI stack add: {RenderDiagnostics.DescribeUniversalAdditionalCameraData(newCam.gameObject)}");
+        }
     }
 
     private void ConfigureUiCameras()
@@ -108,8 +117,17 @@ public class NOUIManager : NOVRBehaviour
         camera.clearFlags = CameraClearFlags.Depth;
         camera.backgroundColor = Color.clear;
         camera.targetTexture = null;
+        camera.stereoTargetEye = StereoTargetEyeMask.Both;
         camera.nearClipPlane = 0.01f;
         camera.farClipPlane = 10000f;
         camera.rect = new Rect(0f, 0f, 1f, 1f);
+        var additionalCameraData = camera.GetComponent<UniversalAdditionalCameraData>();
+        if (additionalCameraData != null)
+        {
+            additionalCameraData.allowXRRendering = true;
+        }
+        RenderDiagnostics.InfoOnce(
+            $"configured-ui-camera-{camera.GetInstanceID()}",
+            $"Configured NOVR UI camera: {RenderDiagnostics.DescribeCamera(camera)}; {RenderDiagnostics.DescribeUniversalAdditionalCameraData(camera.gameObject)}");
     }
 }

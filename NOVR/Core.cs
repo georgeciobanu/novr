@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Reflection;
+using NOVR.Diagnostics;
 using NOVR.VrCamera;
 using NOVR.VrTogglers;
 using NOVR.VrUi;
@@ -31,6 +32,8 @@ public class Core : MonoBehaviour
     private void Awake()
     {
         DontDestroyOnLoad(gameObject);
+        RenderDiagnostics.Info("Core Awake: creating persistent NOVR services.");
+        gameObject.AddComponent<RenderPipelineDiagnostics>();
         gameObject.AddComponent<VrCameraManager>();
         gameObject.AddComponent<APIBus>();
     }
@@ -44,20 +47,21 @@ public class Core : MonoBehaviour
 
     private void Start()
     {
-        
-        
+        RenderDiagnostics.Info("Core Start: resolving XR refresh-rate API and creating runtime behaviours.");
         var xrDeviceType = Type.GetType("UnityEngine.XR.XRDevice, UnityEngine.XRModule") ??
                            Type.GetType("UnityEngine.XR.XRDevice, UnityEngine.VRModule") ??
                            Type.GetType("UnityEngine.VR.VRDevice, UnityEngine.VRModule") ??
                            Type.GetType("UnityEngine.VR.VRDevice, UnityEngine");
 
         _refreshRateProperty = xrDeviceType?.GetProperty("refreshRate");
+        RenderDiagnostics.Info($"XR refresh-rate source type={xrDeviceType?.FullName ?? "<not found>"} propertyFound={_refreshRateProperty != null}");
         
         _headsetData = NOVRBehaviour.Create<NOVRHeadsetData>(transform);
         _vrUi = NOVRBehaviour.Create<NOUIManager>(transform);
+        RenderDiagnostics.Info("Core Start: headset data and VR UI behaviours created.");
         
         _vrTogglerManager = new VrTogglerManager();
-        
+        RenderDiagnostics.Info("Core Start: VR toggler manager created.");
     }
 
 
