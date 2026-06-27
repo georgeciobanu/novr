@@ -46,10 +46,13 @@ public class VrUiCursor: NOVRBehaviour
     private const float MaxYawDegrees = 65f;
     private const float MaxPitchDegrees = 45f;
     private const float DefaultProjectionDistance = 5;
-    private const float CursorCanvasScale = 0.001f;
-    private const int CursorTextureSize = 64;
-    private const float CursorRingRadius = 12f;
-    private const float CursorRingThickness = 4f;
+    private const float CursorCanvasScale = 0.00115f;
+    private const int CursorTextureSize = 72;
+    private const float CursorRingRadius = 13.5f;
+    private const float CursorRingThickness = 4.5f;
+    private const float CursorOutlineScale = 1.32f;
+    private const float CursorSurfaceOffset = 0.12f;
+    private const float MaximizedMapFallbackDistance = 2.88f;
     private const float CursorIdlePulseScale = 0.035f;
     private const float CursorIdlePulseSpeed = 5.5f;
     private const float CursorHoverScale = 1.18f;
@@ -64,6 +67,7 @@ public class VrUiCursor: NOVRBehaviour
     private RectTransform? _cursorRectTransform;
     private Canvas? _cursorCanvas;
     private RawImage? _cursorImage;
+    private RawImage? _cursorOutlineImage;
     private bool _cursorOverInteractive;
     private float _lastCursorClickTime = -100f;
     private bool _hasProjectionReferenceOverride;
@@ -173,10 +177,6 @@ public class VrUiCursor: NOVRBehaviour
             buttons = buttons
         });
 
-        if (realMouse.leftButton.wasPressedThisFrame)
-        {
-            LogRaycastAtCursor();
-        }
     }
     
 
@@ -229,6 +229,10 @@ public class VrUiCursor: NOVRBehaviour
     {
         if (_cursor != null)
         {
+            if (_cursorOutlineImage != null)
+            {
+                _cursorOutlineImage.texture = _texture;
+            }
             if (_cursorImage != null)
             {
                 _cursorImage.texture = _texture;
@@ -247,15 +251,24 @@ public class VrUiCursor: NOVRBehaviour
 
         _cursorRectTransform = _cursor.GetComponent<RectTransform>();
         _cursorRectTransform.sizeDelta = new Vector2(CursorTextureSize, CursorTextureSize);
+
+        var outlineObject = new GameObject("VrUiCursorOutline");
+        outlineObject.transform.SetParent(_cursor.transform, false);
+        var outlineRectTransform = outlineObject.AddComponent<RectTransform>();
+        outlineRectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        outlineRectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        outlineRectTransform.pivot = new Vector2(0.5f, 0.5f);
+        outlineRectTransform.sizeDelta = new Vector2(CursorTextureSize * CursorOutlineScale, CursorTextureSize * CursorOutlineScale);
+        _cursorOutlineImage = outlineObject.AddComponent<RawImage>();
+        _cursorOutlineImage.raycastTarget = false;
+        _cursorOutlineImage.texture = _texture;
+        _cursorOutlineImage.color = Color.black;
+
         _cursorImage = _cursor.AddComponent<RawImage>();
         _cursorImage.raycastTarget = false;
         _cursorImage.texture = _texture;
         _cursorImage.color = CursorNormalColor;
         LayerHelper.SetLayerRecursive(_cursor.transform, LayerHelper.GetVrUiLayer());
-        
-        
-        
-        
     }
 
 
@@ -290,26 +303,110 @@ public class VrUiCursor: NOVRBehaviour
         EventSystem.current.RaycastAll(pointerEventData, results);
 
         var camera = UiCamera;
+        if (camera == null)
+        {
+            return false;
+        }
         Vector3 cameraPos = camera != null ? camera.transform.position : Vector3.zero;
+        var disabledMapBlocker = false;
 
         foreach (var result in results)
         {
             if (result.gameObject == _cursor || 
-                result.distance < 0f ||
-                result.gameObject.GetComponentInParent<global::MapIcon>() != null)
+                result.distance < 0f)
             {
                 continue;
             }
 
-            overInteractive = IsInteractiveRaycastTarget(result.gameObject);
-            distance = result.worldPosition == Vector3.zero
+            if (TryDisableNonInteractiveMapRaycastBlocker(result.gameObject, out _))
+            {
+                disabledMapBlocker = true;
+                continue;
+            }
+
+            overInteractive = IsHoverScaleTarget(result.gameObject);
+            var hitDistance = result.worldPosition == Vector3.zero
                 ? result.distance
                 : Vector3.Distance(cameraPos, result.worldPosition);
+            distance = Mathf.Max(camera.nearClipPlane + 0.02f, hitDistance - CursorSurfaceOffset);
 
             return distance > 0f;
         }
 
+        if (disabledMapBlocker)
+        {
+            results.Clear();
+            EventSystem.current.RaycastAll(pointerEventData, results);
+
+            foreach (var result in results)
+            {
+                if (result.gameObject == _cursor ||
+                    result.distance < 0f ||
+                    TryDisableNonInteractiveMapRaycastBlocker(result.gameObject, out _))
+                {
+                    continue;
+                }
+
+                overInteractive = IsHoverScaleTarget(result.gameObject);
+                var hitDistance = result.worldPosition == Vector3.zero
+                    ? result.distance
+                    : Vector3.Distance(cameraPos, result.worldPosition);
+                distance = Mathf.Max(camera.nearClipPlane + 0.02f, hitDistance - CursorSurfaceOffset);
+
+                return distance > 0f;
+            }
+        }
+
+        if (IsMapMaximized())
+        {
+            distance = MaximizedMapFallbackDistance;
+            overInteractive = false;
+            return true;
+        }
+
         return false;
+    }
+
+    private static bool TryDisableNonInteractiveMapRaycastBlocker(GameObject gameObject, out string path)
+    {
+        path = GetGameObjectPath(gameObject);
+        var graphic = gameObject.GetComponent<Graphic>();
+        if (graphic == null || !graphic.raycastTarget)
+        {
+            return false;
+        }
+
+        if (!IsMapUiObject(gameObject) ||
+            gameObject.GetComponentInParent<global::MapIcon>() != null ||
+            IsInteractiveRaycastTarget(gameObject))
+        {
+            return false;
+        }
+
+        graphic.raycastTarget = false;
+        return true;
+    }
+
+    private static bool IsMapUiObject(GameObject gameObject)
+    {
+        var path = GetGameObjectPath(gameObject);
+        return path.IndexOf("DynamicMap", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               path.IndexOf("Map", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               path.IndexOf("Radar", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               path.IndexOf("Jammed", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               path.IndexOf("Threat", System.StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool IsMapMaximized()
+    {
+        try
+        {
+            return global::DynamicMap.mapMaximized;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsInteractiveRaycastTarget(GameObject gameObject)
@@ -324,6 +421,16 @@ public class VrUiCursor: NOVRBehaviour
                ExecuteEvents.GetEventHandler<IPointerDownHandler>(gameObject) != null ||
                ExecuteEvents.GetEventHandler<ISubmitHandler>(gameObject) != null ||
                ExecuteEvents.GetEventHandler<IDragHandler>(gameObject) != null;
+    }
+
+    private static bool IsHoverScaleTarget(GameObject gameObject)
+    {
+        if (gameObject.GetComponentInParent<global::MapIcon>() != null)
+        {
+            return false;
+        }
+
+        return IsInteractiveRaycastTarget(gameObject);
     }
 
     private void UpdateCursorAnimation(Mouse realMouse)
@@ -410,38 +517,6 @@ public class VrUiCursor: NOVRBehaviour
         texture.SetPixels32(colors);
         texture.Apply();
         return texture;
-    }
-    
-    private void LogRaycastAtCursor()
-    {
-        if (EventSystem.current == null) return;
-        
-        var screenPos = GetScreenPoint();
-        var pointerEventData = new PointerEventData(EventSystem.current)
-        {
-            position = screenPos
-        };
-
-        var results = new List<RaycastResult>();
-        EventSystem.current.RaycastAll(pointerEventData, results);
-        
-        Debug.Log($"[VrUiCursor] Click Raycast at screenPos={screenPos}: found {results.Count} results");
-        for (int i = 0; i < results.Count; i++)
-        {
-            var result = results[i];
-            if (result.gameObject == _cursor) continue;
-            
-            var canvas = result.gameObject.GetComponentInParent<Canvas>();
-            var cg = result.gameObject.GetComponentInParent<CanvasGroup>();
-            string cgInfo = cg != null ? $", CanvasGroup(alpha={cg.alpha}, interactable={cg.interactable}, blocksRaycasts={cg.blocksRaycasts})" : "";
-            string rectInfo = "";
-            var rt = result.gameObject.GetComponent<RectTransform>();
-            if (rt != null)
-            {
-                rectInfo = $", localPos={rt.localPosition}, size={rt.sizeDelta}";
-            }
-            Debug.Log($"[VrUiCursor]   Hit[{i}]: name='{result.gameObject.name}', path='{GetGameObjectPath(result.gameObject)}', canvas='{(canvas != null ? canvas.name : "None")}'{rectInfo}{cgInfo}");
-        }
     }
     
     private static string GetGameObjectPath(GameObject go)

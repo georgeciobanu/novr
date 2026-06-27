@@ -35,6 +35,8 @@ public class UIBehaviorPatcher : NOVRBehaviour
     private static Dictionary<Component, Type> _toPatch_component = new();
     private static Dictionary<string, Type> _toPatch_name = new();
     private static List<GameObject> _toReactivate = new();
+    private float _nextTacScreenRaycastDisableTime;
+    private int _tacScreenRaycastDisablePasses;
     
 
     static UIBehaviorPatcher()
@@ -128,12 +130,19 @@ public class UIBehaviorPatcher : NOVRBehaviour
                 var name = go.name;
                 if (_toPatch_name.TryGetValue(name, out var toAdd))
                 {
+                    if (name == "Canvas" && IsCockpitInstrumentCanvas(go))
+                    {
+                        continue;
+                    }
+
                     Debug.Log($"UIBehaviorPatcher: Adding {toAdd.Name} to {name} (name patch)");
                     if (!go.TryGetComponent(toAdd, out Component _)) AddAndBounceIfActive(go, toAdd);
                 }
             }
             _toPatch_name.Clear();
         }
+
+        DisableCockpitTacScreenRaycasts();
     }
     
     private static void AddAndBounceIfActive(GameObject go, Type toAdd)
@@ -146,5 +155,61 @@ public class UIBehaviorPatcher : NOVRBehaviour
         Debug.Log($"UIBehaviorPatcher: Deactivating {go.name} for one frame to force lifecycle callbacks");
         go.SetActive(false);
         _toReactivate.Add(go);
+    }
+
+    private void DisableCockpitTacScreenRaycasts()
+    {
+        if (_tacScreenRaycastDisablePasses >= 60 ||
+            Time.realtimeSinceStartup < _nextTacScreenRaycastDisableTime)
+        {
+            return;
+        }
+
+        _tacScreenRaycastDisablePasses++;
+        _nextTacScreenRaycastDisableTime = Time.realtimeSinceStartup + 1f;
+
+        foreach (var graphic in Resources.FindObjectsOfTypeAll<UnityEngine.UI.Graphic>())
+        {
+            if (graphic == null || !graphic.enabled)
+            {
+                continue;
+            }
+
+            var path = GetGameObjectPath(graphic.gameObject);
+            if (!ContainsIgnoreCase(path, "tacScreen"))
+            {
+                continue;
+            }
+
+            if (graphic.raycastTarget)
+            {
+                graphic.raycastTarget = false;
+            }
+        }
+    }
+
+    private static bool IsCockpitInstrumentCanvas(GameObject go)
+    {
+        var path = GetGameObjectPath(go);
+        return ContainsIgnoreCase(path, "cockpit_") ||
+               ContainsIgnoreCase(path, "tacScreen");
+    }
+
+    private static bool ContainsIgnoreCase(string source, string value)
+    {
+        return source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static string GetGameObjectPath(GameObject go)
+    {
+        var path = go.name;
+        var parent = go.transform.parent;
+        while (parent != null)
+        {
+            path = parent.name + "/" + path;
+            parent = parent.parent;
+        }
+
+        return path;
     }
 }
