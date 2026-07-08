@@ -115,11 +115,6 @@ public class NOVRHeadsetData : NOVRBehaviour
         UpdateTransform();
     }
 
-    private void Update()
-    {
-        UpdateTransform();
-    }
-
     private void LateUpdate()
     {
         UpdateTransform();
