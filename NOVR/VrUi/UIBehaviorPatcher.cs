@@ -37,6 +37,8 @@ public class UIBehaviorPatcher : NOVRBehaviour
     private static List<GameObject> _toReactivate = new();
     private float _nextTacScreenRaycastDisableTime;
     private int _tacScreenRaycastDisablePasses;
+    private string? _lastTacScreenAircraftId;
+    private bool _tacScreenRaycastsDisabled;
     
 
     static UIBehaviorPatcher()
@@ -142,7 +144,22 @@ public class UIBehaviorPatcher : NOVRBehaviour
             _toPatch_name.Clear();
         }
 
+        ResetTacScreenRaycastScanIfAircraftChanged();
         DisableCockpitTacScreenRaycasts();
+    }
+
+    private void ResetTacScreenRaycastScanIfAircraftChanged()
+    {
+        var aircraftId = Core.CurrentAircraftId ?? string.Empty;
+        if (_lastTacScreenAircraftId == aircraftId)
+        {
+            return;
+        }
+
+        _lastTacScreenAircraftId = aircraftId;
+        _tacScreenRaycastsDisabled = false;
+        _tacScreenRaycastDisablePasses = 0;
+        _nextTacScreenRaycastDisableTime = 0f;
     }
     
     private static void AddAndBounceIfActive(GameObject go, Type toAdd)
@@ -159,7 +176,9 @@ public class UIBehaviorPatcher : NOVRBehaviour
 
     private void DisableCockpitTacScreenRaycasts()
     {
-        if (_tacScreenRaycastDisablePasses >= 60 ||
+        if (_tacScreenRaycastsDisabled ||
+            string.IsNullOrEmpty(Core.CurrentAircraftId) ||
+            _tacScreenRaycastDisablePasses >= 10 ||
             Time.realtimeSinceStartup < _nextTacScreenRaycastDisableTime)
         {
             return;
@@ -168,6 +187,8 @@ public class UIBehaviorPatcher : NOVRBehaviour
         _tacScreenRaycastDisablePasses++;
         _nextTacScreenRaycastDisableTime = Time.realtimeSinceStartup + 1f;
 
+        var matchedGraphics = 0;
+        var disabledGraphics = 0;
         foreach (var graphic in Resources.FindObjectsOfTypeAll<UnityEngine.UI.Graphic>())
         {
             if (graphic == null || !graphic.enabled)
@@ -181,11 +202,23 @@ public class UIBehaviorPatcher : NOVRBehaviour
                 continue;
             }
 
+            matchedGraphics++;
             if (graphic.raycastTarget)
             {
                 graphic.raycastTarget = false;
+                disabledGraphics++;
             }
         }
+
+        if (matchedGraphics <= 0)
+        {
+            return;
+        }
+
+        _tacScreenRaycastsDisabled = true;
+        Debug.Log(
+            $"[NOVR] UIBehaviorPatcher disabled tacScreen raycasts once for aircraft='{Core.CurrentAircraftId}': " +
+            $"matched={matchedGraphics}, disabled={disabledGraphics}, passes={_tacScreenRaycastDisablePasses}.");
     }
 
     private static bool IsCockpitInstrumentCanvas(GameObject go)

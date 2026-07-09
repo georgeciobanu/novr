@@ -81,7 +81,12 @@ public class Core : MonoBehaviour
         {
             gameObject.AddComponent<XrStartupDiagnosticsBehaviour>();
         }
-        
+
+        EnsureRenderDiagnosticsBehaviour();
+        EnsureCameraStackDiagnosticsToggles();
+        EnsureSpiPipelineTrace();
+        EnsureSinglePassTestAutoStart();
+
         _vrTogglerManager = new VrTogglerManager();
         
     }
@@ -91,7 +96,56 @@ public class Core : MonoBehaviour
     private void Update()
     {
         EnsureNativeMenuEnvironmentAssetCache();
+        EnsureRenderDiagnosticsBehaviour();
+        EnsureCameraStackDiagnosticsToggles();
+        EnsureSpiPipelineTrace();
+        EnsureSinglePassTestAutoStart();
         UpdatePhysicsRate();
+    }
+
+    private void EnsureCameraStackDiagnosticsToggles()
+    {
+        if (gameObject.GetComponent<CameraStackDiagnosticsToggles>() != null)
+        {
+            return;
+        }
+
+        gameObject.AddComponent<CameraStackDiagnosticsToggles>();
+    }
+
+    private void EnsureSpiPipelineTrace()
+    {
+#if MODERN
+        if (!ModConfiguration.Instance.LogSpiPipelineTrace.Value ||
+            gameObject.GetComponent<SpiPipelineTrace>() != null)
+        {
+            return;
+        }
+
+        gameObject.AddComponent<SpiPipelineTrace>();
+#endif
+    }
+
+    private void EnsureSinglePassTestAutoStart()
+    {
+        if (!ModConfiguration.Instance.SinglePassTestAutoStart.Value ||
+            gameObject.GetComponent<SinglePassTestAutoStart>() != null)
+        {
+            return;
+        }
+
+        gameObject.AddComponent<SinglePassTestAutoStart>();
+    }
+
+    private void EnsureRenderDiagnosticsBehaviour()
+    {
+        if (!ModConfiguration.Instance.LogRenderDiagnostics.Value ||
+            gameObject.GetComponent<RenderDiagnosticsBehaviour>() != null)
+        {
+            return;
+        }
+
+        gameObject.AddComponent<RenderDiagnosticsBehaviour>();
     }
 
     private void EnsureNativeMenuEnvironmentAssetCache()

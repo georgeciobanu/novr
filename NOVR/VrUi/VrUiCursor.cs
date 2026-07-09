@@ -76,7 +76,12 @@ public class VrUiCursor: NOVRBehaviour
     private bool _hasInitializedEventSystem = false;
     private Mouse? _virtualMouse;
     private Mouse? _realMouse;
-    
+
+    // Reused every frame by the cursor UI raycast so it doesn't allocate a fresh PointerEventData +
+    // results list per frame while the cursor is visible.
+    private readonly List<RaycastResult> _raycastResults = new();
+    private PointerEventData? _pointerEventData;
+
     
     private int ScreenWidth => Screen.width;
     private int ScreenHeight => Screen.height;
@@ -294,13 +299,12 @@ public class VrUiCursor: NOVRBehaviour
             return false;
         }
 
-        var pointerEventData = new PointerEventData(EventSystem.current)
-        {
-            position = screenPos
-        };
+        _pointerEventData ??= new PointerEventData(EventSystem.current);
+        _pointerEventData.position = screenPos;
 
-        var results = new List<RaycastResult>();
-        EventSystem.current.RaycastAll(pointerEventData, results);
+        var results = _raycastResults;
+        results.Clear();
+        EventSystem.current.RaycastAll(_pointerEventData, results);
 
         var camera = UiCamera;
         if (camera == null)
@@ -336,7 +340,7 @@ public class VrUiCursor: NOVRBehaviour
         if (disabledMapBlocker)
         {
             results.Clear();
-            EventSystem.current.RaycastAll(pointerEventData, results);
+            EventSystem.current.RaycastAll(_pointerEventData, results);
 
             foreach (var result in results)
             {

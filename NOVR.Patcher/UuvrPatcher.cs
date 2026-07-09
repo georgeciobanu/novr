@@ -164,7 +164,7 @@ public class Patcher
             return;
         }
 
-        var singlePassValue = openXrSettingsType.NestedTypes
+        var renderModeValue = openXrSettingsType.NestedTypes
             .First(type => type.Name == "RenderMode")
             .Fields
             .First(field => field.Name == "MultiPass");
@@ -173,7 +173,7 @@ public class Patcher
         var firstInstruction = method.Body.Instructions.First();
 
         il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldarg_0));
-        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldc_I4, singlePassValue.Constant is int value ? value : 1));
+        il.InsertBefore(firstInstruction, il.Create(OpCodes.Ldc_I4, renderModeValue.Constant is int value ? value : 0));
         il.InsertBefore(firstInstruction, il.Create(OpCodes.Stfld, renderModeField));
     }
 #endif

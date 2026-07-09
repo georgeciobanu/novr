@@ -20,6 +20,23 @@ public class ModConfiguration
     public readonly ConfigEntry<bool> EnableNativeMenuEnvironment;
     public readonly ConfigEntry<bool> EnableExperimentalSteamVrControllerProfiles;
     public readonly ConfigEntry<bool> LogXrStartupDiagnostics;
+    public readonly ConfigEntry<bool> LogRenderDiagnostics;
+    public readonly ConfigEntry<bool> LogRenderDiagnosticsVerbose;
+    public readonly ConfigEntry<float> RenderDiagnosticsIntervalSeconds;
+    public readonly ConfigEntry<float> RenderDiagnosticsSlowCameraMs;
+    public readonly ConfigEntry<float> RenderDiagnosticsSpikeMs;
+    public readonly ConfigEntry<bool> DisablePostProcessingRenderer;
+    public readonly ConfigEntry<bool> DisableCockpitRenderer;
+    public readonly ConfigEntry<bool> DisableVrHudCamera;
+    public readonly ConfigEntry<bool> DisableMfdScreenCameras;
+    public readonly ConfigEntry<bool> DisableReflectionProbeCameras;
+    public readonly ConfigEntry<bool> LogAllocationBreakdown;
+    public readonly ConfigEntry<bool> LogSpiPipelineTrace;
+    public readonly ConfigEntry<float> SpiPipelineTraceIntervalSeconds;
+    public readonly ConfigEntry<bool> SpiPipelineTraceEyeReadback;
+    public readonly ConfigEntry<bool> SinglePassTestAutoStart;
+    public readonly ConfigEntry<string> SinglePassTestAutoStartMissionQuery;
+    public readonly ConfigEntry<float> SinglePassTestAutoStartDelaySeconds;
     public readonly ConfigEntry<float> CockpitHeadForwardOffset;
     public readonly ConfigEntry<float> CockpitHeadRightOffset;
     public readonly ConfigEntry<KeyCode> RecenterShortcut;
@@ -77,8 +94,110 @@ public class ModConfiguration
         LogXrStartupDiagnostics = config.Bind(
             "Diagnostics",
             "Log XR Startup Diagnostics",
-            false,
+            true,
             "Log read-only XR loader, OpenXR runtime, subsystem, and input device state during VR startup.");
+
+        LogRenderDiagnostics = config.Bind(
+            "Diagnostics",
+            "Log Render Diagnostics",
+            true,
+            "Log frame timing, camera render timing, XR render pass, and selected Unity profiler marker summaries for in-flight performance troubleshooting.");
+
+        LogRenderDiagnosticsVerbose = config.Bind(
+            "Diagnostics",
+            "Log Render Diagnostics Verbose",
+            false,
+            "Include detailed camera stack, XR render pass, and in-flight object count data in render diagnostic snapshots.");
+
+        RenderDiagnosticsIntervalSeconds = config.Bind(
+            "Diagnostics",
+            "Render Diagnostics Interval Seconds",
+            5.0f,
+            "How often NOVR writes render diagnostic summaries to Player.log while Log Render Diagnostics is enabled.");
+
+        RenderDiagnosticsSlowCameraMs = config.Bind(
+            "Diagnostics",
+            "Render Diagnostics Slow Camera Milliseconds",
+            8.0f,
+            "Log an immediate warning when a single camera render callback window exceeds this many milliseconds. Set to 0 to disable slow-camera warnings.");
+
+        RenderDiagnosticsSpikeMs = config.Bind(
+            "Diagnostics",
+            "Render Diagnostics Spike Milliseconds",
+            16.0f,
+            "Immediately log a full per-frame breakdown (preload, GC, scripts, cameras, alloc, delivery) whenever a frame exceeds this many milliseconds, to attribute judder spikes. Set to 0 to disable.");
+
+        DisablePostProcessingRenderer = config.Bind(
+            "Diagnostics",
+            "Disable PostProcessing Renderer Camera",
+            false,
+            "Diagnostic toggle: disable NOVR/NO postProcessingRenderer cameras so their camera-stack cost can be measured.");
+
+        DisableCockpitRenderer = config.Bind(
+            "Diagnostics",
+            "Disable Cockpit Renderer Camera",
+            false,
+            "Diagnostic toggle: disable NOVR/NO cockpitRenderer cameras so their camera-stack cost can be measured.");
+
+        DisableVrHudCamera = config.Bind(
+            "Diagnostics",
+            "Disable VR HUD Camera",
+            false,
+            "Diagnostic toggle: disable NOVR's VrCockpitHudCamera and keep it out of the main camera stack.");
+
+        DisableMfdScreenCameras = config.Bind(
+            "Diagnostics",
+            "Disable MFD Screen Cameras",
+            false,
+            "Diagnostic toggle: disable cockpit MFD screenCam render-texture cameras.");
+
+        DisableReflectionProbeCameras = config.Bind(
+            "Diagnostics",
+            "Disable Reflection Probe Cameras",
+            false,
+            "Diagnostic toggle: disable reflection probe cameras.");
+
+        LogAllocationBreakdown = config.Bind(
+            "Diagnostics",
+            "Log Allocation Breakdown",
+            true,
+            "Attribute per-frame managed heap allocations to player-loop phases and camera renders, and report which allocate the most. Adds a low-cost per-phase byte counter on the main thread.");
+
+        LogSpiPipelineTrace = config.Bind(
+            "Diagnostics",
+            "Log SPI Pipeline Trace",
+            false,
+            "Deep, sampled trace of the stereo render pipeline: per-camera stereo/single-pass state, render targets, per-eye projection, URP data, XR pass shape, stereo-array render textures, and shader instancing support. Use when testing SinglePassInstanced. Sampled, not per-frame.");
+
+        SpiPipelineTraceIntervalSeconds = config.Bind(
+            "Diagnostics",
+            "SPI Pipeline Trace Interval Seconds",
+            6.0f,
+            "How often the SPI pipeline trace writes a full deep snapshot. Cheap per-frame stereo counters are aggregated between snapshots.");
+
+        SpiPipelineTraceEyeReadback = config.Bind(
+            "Diagnostics",
+            "SPI Pipeline Trace Eye Readback",
+            true,
+            "During the SPI pipeline trace, async-read the centre of each stereo eye slice and log its average colour, to objectively detect a black/failed eye. Requires Log SPI Pipeline Trace.");
+
+        SinglePassTestAutoStart = config.Bind(
+            "Diagnostics",
+            "SinglePass Test Auto Start",
+            true,
+            "Automatically launch a single-player mission for SinglePassInstanced diagnostics when menus are unusable.");
+
+        SinglePassTestAutoStartMissionQuery = config.Bind(
+            "Diagnostics",
+            "SinglePass Test Auto Start Mission Query",
+            "Furball",
+            "Case-insensitive mission name/key fragment used by the SinglePassInstanced diagnostic auto-start.");
+
+        SinglePassTestAutoStartDelaySeconds = config.Bind(
+            "Diagnostics",
+            "SinglePass Test Auto Start Delay Seconds",
+            5.0f,
+            "Seconds to wait before attempting the SinglePassInstanced diagnostic auto-start.");
 
         CockpitHeadForwardOffset = config.Bind(
             "Experimental",
